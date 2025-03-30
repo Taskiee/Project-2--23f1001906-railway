@@ -1,0 +1,3 @@
+Download the image and compress it losslessly to an image that is less than 1,500 bytes.
+By losslessly, we mean that every pixel in the new image should be identical to the original image.
+Upload your losslessly compressed image (less than 1,500 bytes)

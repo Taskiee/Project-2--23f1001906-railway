@@ -1,0 +1,32 @@
+Version:          Code 1.90.1 (611f9bfce64f25108829dd295f54a6894e87339d, 2024-06-11T21:01:24.262Z)
+OS Version:       Windows_NT x64 10.0.22631
+CPUs:             AMD Ryzen 5 5600H with Radeon Graphics          (12 x 3294)
+Memory (System):  7.35GB (0.40GB free)
+VM:               0%
+Screen Reader:    no
+Process Argv:     --crash-reporter-id 070a2197-a132-4e52-94e4-aca7c996c3a1
+GPU Status:       2d_canvas:                              enabled
+                  canvas_oop_rasterization:               enabled_on
+                  direct_rendering_display_compositor:    disabled_off_ok
+                  gpu_compositing:                        enabled
+                  multiple_raster_threads:                enabled_on
+                  opengl:                                 enabled_on
+                  rasterization:                          enabled
+                  raw_draw:                               disabled_off_ok
+                  skia_graphite:                          disabled_off
+                  video_decode:                           enabled
+                  video_encode:                           enabled
+                  vulkan:                                 disabled_off
+                  webgl:                                  enabled
+                  webgl2:                                 enabled
+                  webgpu:                                 enabled
+
+CPU %   Mem MB     PID  Process
+    0      104   27520  code main
+    0      226   19132  window [1] (Welcome - Visual Studio Code)
+    0       95   22140  extensionHost [1]
+    0       31   22448     utility-network-service
+    0       78   23120     gpu-process
+    0       47   27600  fileWatcher [1]
+    0       19   28356     crashpad-handler
+    1      109   29476  shared-process

@@ -1,0 +1,1 @@
+https://raw.githubusercontent.com/Taskiee/assignment-repo/main/email.json
