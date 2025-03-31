@@ -5,3 +5,14 @@ slowapi
 uvicorn
 gitpython
 python-multipart
+flask
+gitpython
+sentence-transformers
+gunicorn
+requests
+python-dotenv
+openai
+transformers
+torch
+flask-limiter
+redis 
