@@ -1,0 +1,12 @@
+{
+  "build": {
+    "builder": "nixpacks",
+    "config": {
+      "buildCommand": "pip install -r requirements.txt",
+      "startCommand": "python app.py"
+    }
+  },
+  "deploy": {
+    "startCommand": "python app.py"
+  }
+}
