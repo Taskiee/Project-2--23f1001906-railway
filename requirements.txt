@@ -1,6 +1,11 @@
 fastapi
 sentence-transformers
-redis
 slowapi
-uvicorn
 gitpython
+gunicorn
+requests
+python-dotenv
+openai
+transformers
+torch
+redis 
