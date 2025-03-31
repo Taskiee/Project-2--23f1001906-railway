@@ -1,14 +1,19 @@
 import os
 import json
 import subprocess
-from flask import Flask, request, jsonify
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from redis import Redis
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sentence_transformers import SentenceTransformer
+from redis import Redis
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from typing import Optional
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize FastAPI app
+app = FastAPI()
 
 # Constants
 REPO_URL = "https://github.com/Taskiee/Project-2---23f1001906"
@@ -16,17 +21,25 @@ LOCAL_PATH = "./repo"
 FOLDERS = ["GA1", "GA2"]
 EMBEDDINGS_FILE = "embeddings.json"
 
+# CORS Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Initialize Redis for rate limiting
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = Redis.from_url(redis_url, decode_responses=True)
 
 # Rate limiter configuration
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    storage_uri=redis_url,
-    default_limits=["5 per minute"]
-)
+limiter = Limiter(key_func=get_remote_address, storage_uri=redis_url)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda _, exc: JSONResponse(
+    {"error": "Rate limit exceeded"}, status_code=429
+))
 
 # Initialize embedding model
 embedding_model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
@@ -112,28 +125,39 @@ def execute_script(file_path):
     except Exception as e:
         return f"Exception: {str(e)}"
 
-@app.route("/", methods=["GET", "POST"])
+@app.get("/")
+@app.post("/")
 @limiter.limit("5 per minute")
-def handle_request():
+async def handle_request(request: Request, question: Optional[str] = None):
     """Main API endpoint"""
     if request.method == "GET":
-        return jsonify({
+        return {
             "status": "active",
             "endpoints": {
                 "POST /": "Submit questions",
                 "GET /health": "Service health check"
             }
-        })
+        }
     
-    question = request.form.get("question") or request.json.get("question")
     if not question:
-        return jsonify({"error": "Question parameter is required"}), 400
+        # Try to get question from form data or JSON body
+        form_data = await request.form()
+        question = form_data.get("question")
+        if not question:
+            try:
+                json_data = await request.json()
+                question = json_data.get("question")
+            except:
+                pass
+    
+    if not question:
+        raise HTTPException(status_code=400, detail="Question parameter is required")
     
     try:
         with open(EMBEDDINGS_FILE, "r") as f:
             embeddings = json.load(f)
     except FileNotFoundError:
-        return jsonify({"error": "Embeddings not initialized"}), 503
+        raise HTTPException(status_code=503, detail="Embeddings not initialized")
 
     # Find closest matching question
     input_embedding = embedding_model.encode(question).tolist()
@@ -149,21 +173,21 @@ def handle_request():
     if best_match and embeddings[best_match]["solution_file"]:
         solution_file = embeddings[best_match]["solution_file"]
         answer = execute_script(solution_file)
-        return jsonify({
+        return {
             "question": best_match,
             "answer": answer,
             "similarity_score": best_similarity,
             "solution_file": os.path.basename(solution_file)
-        })
-    return jsonify({"error": "No matching solution found"}), 404
+        }
+    raise HTTPException(status_code=404, detail="No matching solution found")
 
-@app.route("/health", methods=["GET"])
-def health_check():
+@app.get("/health")
+async def health_check():
     """Health check endpoint"""
-    return jsonify({
+    return {
         "status": "healthy",
         "redis_connected": redis_client.ping()
-    })
+    }
 
 def initialize_app():
     clone_repository()
@@ -180,8 +204,14 @@ def initialize_app():
     # Log sample data
     sample_q = next(iter(embeddings.items()))
     print(f"\nSample embedding:\nQuestion: {sample_q[0]}\nFile: {sample_q[1]['solution_file']}\nVector: {sample_q[1]['embedding'][:5]}...")
-    
-if __name__ == "__main__":
+
+# For Vercel deployment
+@app.on_event("startup")
+async def startup_event():
     initialize_app()
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
+
+# For local testing
+if __name__ == "__main__":
+    import uvicorn
+    initialize_app()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
