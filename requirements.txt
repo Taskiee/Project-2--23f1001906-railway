@@ -1,0 +1,6 @@
+fastapi
+sentence-transformers
+redis
+slowapi
+uvicorn
+gitpython
