@@ -16,3 +16,4 @@ transformers
 torch
 flask-limiter
 redis 
+python-3.9.16
