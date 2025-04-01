@@ -1,0 +1,4 @@
+Download  and extract it. Use ls with options to list all files in the folder along with their date and file size.
+
+What's the total size of all files at least 1968 bytes large and modified on or after Fri, 24 Oct, 2008, 1:42 am IST?
+Note: Don't copy from inside the ZIP file or use Windows Explorer to unzip. That destroys the timestamps. Extract using unzip, 7-Zip or similar utilities and check the timestamps.

@@ -1,0 +1,10 @@
+There is a tickets table in a SQLite database that has columns type, units, and price. Each row is a customer bid for a concert ticket.
+
+type	units	price
+bronze	46	1.41
+Gold	225	0.88
+Bronze	336	1.62
+Gold	113	1.96
+Gold	997	0.69
+...
+What is the total sales of all the items in the "Gold" ticket type? Write SQL to calculate it.

@@ -1,0 +1,11 @@
+The Mozilla Developer Network (MDN) provides detailed documentation on the three main types of selectors:
+
+Basic CSS selectors: Learn about element (div), class (.container), ID (#header), and universal (*) selectors
+Attribute selectors: Target elements based on their attributes or attribute values ([type="text"])
+Combinators: Use relationships between elements (div > p, div + p, div ~ p)
+Practice your CSS selector skills with this interactive tool:
+
+CSS Diner: A fun game that teaches CSS selectors through increasingly challenging levels
+Let's make sure you know how to select elements using CSS selectors. Find all <div>s having a foo class in the hidden element below. What's the sum of their data-value attributes?
+
+Sum of data-value attributes:
