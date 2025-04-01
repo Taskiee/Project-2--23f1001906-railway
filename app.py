@@ -1,11 +1,14 @@
 import os
 import json
 import subprocess
+import atexit
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from redis import Redis
 from sentence_transformers import SentenceTransformer
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -28,14 +31,28 @@ limiter = Limiter(
     default_limits=["5 per minute"]
 )
 
-# Initialize embedding model
-embedding_model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
+# Global variables for embeddings
+embeddings_data = {}
+embedding_model = None
+
+def initialize_embedding_model():
+    """Initialize the embedding model with error handling"""
+    global embedding_model
+    try:
+        embedding_model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
+    except Exception as e:
+        print(f"Failed to initialize embedding model: {str(e)}")
+        raise
 
 def clone_repository():
     """Clone repository if it doesn't exist"""
     if not os.path.exists(LOCAL_PATH):
         print("Cloning repository...")
-        subprocess.run(["git", "clone", REPO_URL, LOCAL_PATH], check=True)
+        try:
+            subprocess.run(["git", "clone", REPO_URL, LOCAL_PATH], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to clone repository: {str(e)}")
+            raise
 
 def extract_data():
     """Extract question-answer pairs from repository"""
@@ -47,27 +64,76 @@ def extract_data():
                 for file in files:
                     if file.endswith(".txt"):
                         q_path = os.path.join(root, file)
-                        with open(q_path, "r", encoding="utf-8") as f:
-                            question = f.read().strip()
-                        
-                        base_name = os.path.splitext(file)[0]
-                        for ext in [".py", ".sh"]:
-                            solution_file = os.path.join(root, f"{base_name}{ext}")
-                            if os.path.exists(solution_file):
-                                data[question] = {"solution_file": solution_file}
-                                break
+                        try:
+                            with open(q_path, "r", encoding="utf-8") as f:
+                                question = f.read().strip()
+                            
+                            base_name = os.path.splitext(file)[0]
+                            for ext in [".py", ".sh"]:
+                                solution_file = os.path.join(root, f"{base_name}{ext}")
+                                if os.path.exists(solution_file):
+                                    data[question] = {"solution_file": solution_file}
+                                    break
+                        except Exception as e:
+                            print(f"Error processing file {q_path}: {str(e)}")
+                            continue
     return data
 
 def generate_embeddings(data):
     """Generate embeddings for all questions"""
     embeddings = {}
     for question, meta in data.items():
-        vector = embedding_model.encode(question).tolist()
-        embeddings[question] = {
-            "embedding": vector,
-            "solution_file": meta["solution_file"]
-        }
+        try:
+            vector = embedding_model.encode(question).tolist()
+            embeddings[question] = {
+                "embedding": vector,
+                "solution_file": meta["solution_file"]
+            }
+        except Exception as e:
+            print(f"Error generating embedding for question: {question[:50]}...: {str(e)}")
+            continue
     return embeddings
+
+def save_embeddings(embeddings):
+    """Save embeddings to file"""
+    try:
+        with open(EMBEDDINGS_FILE, "w") as f:
+            json.dump(embeddings, f, indent=2)
+        print(f"Saved {len(embeddings)} embeddings to {EMBEDDINGS_FILE}")
+    except Exception as e:
+        print(f"Failed to save embeddings: {str(e)}")
+        raise
+
+def load_embeddings():
+    """Load embeddings from file"""
+    global embeddings_data
+    try:
+        if os.path.exists(EMBEDDINGS_FILE):
+            with open(EMBEDDINGS_FILE, "r") as f:
+                embeddings_data = json.load(f)
+            print(f"Loaded {len(embeddings_data)} embeddings from {EMBEDDINGS_FILE}")
+        else:
+            print("No embeddings file found, will initialize new one")
+            initialize_app()
+    except Exception as e:
+        print(f"Failed to load embeddings: {str(e)}")
+        raise
+
+def find_best_match(question):
+    """Find the best matching question using cosine similarity"""
+    input_embedding = embedding_model.encode(question).reshape(1, -1)
+    best_match = None
+    best_similarity = -1
+    
+    for stored_question, data in embeddings_data.items():
+        stored_embedding = np.array(data["embedding"]).reshape(1, -1)
+        similarity = cosine_similarity(input_embedding, stored_embedding)[0][0]
+        
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_match = stored_question
+
+    return best_match, best_similarity
 
 def execute_script(file_path):
     """Execute a script file and return output"""
@@ -111,53 +177,73 @@ def handle_request():
     if not question:
         return jsonify({"error": "Question parameter is required"}), 400
     
-    try:
-        with open(EMBEDDINGS_FILE, "r") as f:
-            embeddings = json.load(f)
-    except FileNotFoundError:
+    if not embeddings_data:
         return jsonify({"error": "Embeddings not initialized"}), 503
 
-    # Find closest matching question
-    input_embedding = embedding_model.encode(question).tolist()
-    best_match = None
-    best_similarity = -1
-    
-    for stored_question, data in embeddings.items():
-        similarity = sum(a*b for a,b in zip(input_embedding, data["embedding"]))
-        if similarity > best_similarity:
-            best_similarity = similarity
-            best_match = stored_question
-
-    if best_match and embeddings[best_match]["solution_file"]:
-        solution_file = embeddings[best_match]["solution_file"]
-        answer = execute_script(solution_file)
-        return jsonify({
-            "question": best_match,
-            "answer": answer,
-            "similarity_score": best_similarity
-        })
-    return jsonify({"error": "No matching solution found"}), 404
+    try:
+        best_match, similarity_score = find_best_match(question)
+        
+        if best_match and embeddings_data[best_match]["solution_file"]:
+            solution_file = embeddings_data[best_match]["solution_file"]
+            answer = execute_script(solution_file)
+            return jsonify({
+                "question": best_match,
+                "answer": answer,
+                "similarity_score": float(similarity_score)  # Convert numpy float to Python float
+            })
+        return jsonify({"error": "No matching solution found"}), 404
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint"""
     return jsonify({
         "status": "healthy",
-        "redis_connected": redis_client.ping()
+        "redis_connected": redis_client.ping(),
+        "embeddings_loaded": len(embeddings_data) > 0,
+        "model_initialized": embedding_model is not None
     })
+
+@app.route("/reinitialize", methods=["POST"])
+def reinitialize():
+    """Endpoint to manually reinitialize embeddings"""
+    try:
+        initialize_app()
+        return jsonify({"status": "success", "message": "Embeddings reinitialized"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def initialize_app():
     """Initialize application data"""
+    global embeddings_data
+    
+    print("Initializing application...")
     clone_repository()
     data = extract_data()
     embeddings = generate_embeddings(data)
-    
-    with open(EMBEDDINGS_FILE, "w") as f:
-        json.dump(embeddings, f, indent=2)
-    
+    save_embeddings(embeddings)
+    embeddings_data = embeddings
     print(f"Initialized with {len(embeddings)} question-answer pairs")
 
+def cleanup():
+    """Cleanup function to run on exit"""
+    print("Cleaning up...")
+
+# Register cleanup function
+atexit.register(cleanup)
+
+# Initialize when starting
 if __name__ == "__main__":
-    initialize_app()
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
+    try:
+        initialize_embedding_model()
+        load_embeddings()
+        port = int(os.environ.get("PORT", 8000))
+        app.run(host="0.0.0.0", port=port)
+    except Exception as e:
+        print(f"Failed to start application: {str(e)}")
+        raise
+else:
+    # For production with gunicorn or similar
+    initialize_embedding_model()
+    load_embeddings()
